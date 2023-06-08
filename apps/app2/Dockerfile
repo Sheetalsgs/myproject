@@ -1,12 +1,12 @@
 # Build stage
 FROM node:14 AS build
 WORKDIR /app
-
+RUN rm -rf node_modules
 # Copy package.json and package-lock.json
 COPY ../../package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm i
 
 # Copy the source code
 COPY . .
@@ -24,6 +24,6 @@ COPY --from=build /app/package*.json ./
 
 # Install production dependencies
 RUN npm ci --production
-
+EXPOSE 5002
 # Set the command to run the microservice
 CMD ["node", "dist/apps/app2/main.js"]

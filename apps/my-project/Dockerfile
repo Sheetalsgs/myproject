@@ -12,7 +12,7 @@ RUN npm ci
 COPY . .
 
 # Build the application
-RUN npm run build app3
+RUN npm run build my-project
 
 # Production stage
 FROM node:14-alpine AS production
@@ -24,7 +24,7 @@ COPY --from=build /app/package*.json ./
 
 # Install production dependencies
 RUN npm ci --production
-EXPOSE 5003
+EXPOSE 5000
 
 # Set the command to run the microservice
-CMD ["node", "dist/apps/app3/main.js"]
+CMD ["node", "dist/apps/my-project/main.js"]
