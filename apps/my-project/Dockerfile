@@ -1,30 +1,27 @@
-# Build stage
-FROM node:14 AS build
+# Base image
+FROM node:14-alpine
+
+# Set the working directory
 WORKDIR /app
 
 # Copy package.json and package-lock.json
-COPY ../../package*.json ./
+#COPY ../../package*.json ./
+COPY package.json ./
+RUN rm -rf node_modules
 
 # Install dependencies
-RUN npm ci
+RUN npm i
+#COPY apps/connection/src/prisma ./src/prisma
+ 
+# Run command on prisma folder
+#WORKDIR /app/src/prisma
+#RUN npx prisma generate
 
-# Copy the source code
-COPY . .
 
-# Build the application
-RUN npm run build my-project
-
-# Production stage
-FROM node:14-alpine AS production
-WORKDIR /app
-
-# Copy the compiled code from the build stage
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/package*.json ./
-
-# Install production dependencies
-RUN npm ci --production
-
+# Copy the compiled code
+#COPY ./dist/apps/connection/main.js ./dist/apps/connection
+COPY ../dist/apps/my-project/ ./dist/apps/my-project/
 
 # Set the command to run the microservice
 CMD ["node", "dist/apps/my-project/main.js"]
+EXPOSE 5000
