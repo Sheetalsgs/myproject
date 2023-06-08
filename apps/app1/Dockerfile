@@ -24,7 +24,7 @@ COPY --from=build /app/package*.json ./
 
 # Install production dependencies
 RUN npm ci --production
-EXPOSE 5001
+
 
 # Set the command to run the microservice
 CMD ["node", "dist/apps/app1/main.js"]
