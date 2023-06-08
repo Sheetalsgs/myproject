@@ -1,15 +1,15 @@
 {
-    "family": "myproject-app1-taskdef",
+    "family": "myproject-taskdef",
     "containerDefinitions": [
         {
             "image": "%REPOSITORY_URI%:v_%BUILD_NUMBER%",
-            "name": "app1",
+            "name": "my-project",
             "cpu": 512,
             "memory": 512,
             "essential": true,
             "portMappings": [
                 {
-                    "containerPort": 5001,
+                    "containerPort": 5000,
                     "hostPort": 0
                 }
             ]
