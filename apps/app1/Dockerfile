@@ -2,6 +2,8 @@
 FROM node:14 AS build
 WORKDIR /app
 
+RUN rm -rf node_modules
+
 # Copy package.json and package-lock.json
 COPY ../../package*.json ./
 
@@ -10,6 +12,7 @@ RUN npm ci
 
 # Copy the source code
 COPY . .
+
 
 # Build the application
 RUN npm run build app1
