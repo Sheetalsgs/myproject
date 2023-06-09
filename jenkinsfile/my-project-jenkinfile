@@ -1,0 +1,307 @@
+pipeline {
+    agent any
+
+    environment {
+        NVM_DIR = "${HOME}/.nvm"
+        PATH = "${NVM_DIR}/versions/node/v18.16.0/bin:${PATH}"
+        ECR_IMAGE_TAG = "v_${BUILD_NUMBER}"
+        ECR_REPOSITORY = "my-project-app1"
+        AWS_REGION = "ap-south-1"
+        CLUSTER = "my-project"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[credentialsId: '07eb7cf4-68a4-4185-a57c-316864d1c9e5', url: 'https://github.com/Sheetalsgs/myproject.git']])
+            }
+        }
+
+        stage('Build and Package') {
+            steps {
+                sh '''
+                    . $HOME/.nvm/nvm.sh
+                    nvm use v18.16.0
+                    node -v
+                    npm install
+                    npm run build my-project
+                '''
+            }
+        }
+
+        stage("Docker Build") {
+            steps {
+                sh '''
+                    ls 
+                    docker version
+                    docker build -t ${ECR_REPOSITORY}:${ECR_IMAGE_TAG} -f apps/my-project/Dockerfile .
+                    docker image list
+                '''
+            }
+        }
+
+        stage("Docker Push to ECR") {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'AWS_ACCOUNT_ID', variable: 'AWS_ACCOUNT_ID')
+                ]) {
+                    script {
+                        def ecrLogin = sh(
+                            returnStdout: true,
+                            script: "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+                        )
+                        sh "docker tag ${ECR_REPOSITORY}:${ECR_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${ECR_IMAGE_TAG}"
+                        sh "docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${ECR_IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+
+        stage("Prepare Environment") {
+            steps {
+                sh """
+                    set -x
+                    env
+                    aws configure list
+                    echo \$HOME
+                """
+            }
+        }
+
+        stage("Retrieve Repository URI") {
+            steps {
+                script {
+                    REPOSITORY_URI = sh(
+                        returnStdout: true,
+                        script: "aws ecr describe-repositories --repository-names ${ECR_REPOSITORY} --region ${AWS_REGION} | jq -r '.repositories[].repositoryUri'"
+                    ).trim()
+                }
+            }
+        }
+
+        stage("Update Task Definition") {
+            steps {
+                dir('taskdef') {
+                    script {
+                        FAMILY = sh(
+                            returnStdout: true,
+                            script: "sed -n 's/.*\"family\": \"\\(.*\\)\",/\\1/p' my-project-taskdef.json"
+                        ).trim()
+                        NAME = sh(
+                            returnStdout: true,
+                            script: "sed -n 's/.*\"name\": \"\\(.*\\)\",/\\1/p' my-project-taskdef.json"
+                        ).trim()
+                        SERVICE_NAME = "${FAMILY}-service"
+
+                        sh """
+                            sed -e "s;%BUILD_NUMBER%;${BUILD_NUMBER};g" -e "s;%REPOSITORY_URI%;${REPOSITORY_URI};g" my-project-taskdef.json > ${WORKSPACE}/${NAME}-v_${BUILD_NUMBER}.json
+                            aws ecs register-task-definition --family ${FAMILY} --cli-input-json file://${WORKSPACE}/${NAME}-v_${BUILD_NUMBER}.json --region ${AWS_REGION}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage("Create or Update Service") {
+            steps {
+                script {
+                    SERVICES = sh(
+                        returnStdout: true,
+                        script: "aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${AWS_REGION} | jq -r '.failures[]'"
+                    ).trim()
+
+                    REVISION = sh(
+                        returnStdout: true,
+                        script: "aws ecs describe-task-definition --task-definition ${FAMILY} --region ${AWS_REGION} | jq -r '.taskDefinition.revision'"
+                    ).trim()
+
+                    if (SERVICES == "") {
+                        echo "Existing service found"
+                        DESIRED_COUNT = sh(
+                            returnStdout: true,
+                            script: "aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${AWS_REGION} | jq -r '.services[].desiredCount'"
+                        ).trim()
+
+                        if (DESIRED_COUNT == "0") {
+                            DESIRED_COUNT = "1"
+                        }
+
+                        sh "aws ecs update-service --cluster ${CLUSTER} --region ${AWS_REGION} --service ${SERVICE_NAME} --task-definition ${FAMILY}:${REVISION} --desired-count ${DESIRED_COUNT}"
+                    } else {
+                        echo "New service created"
+                        sh "aws ecs create-service --service-name ${SERVICE_NAME} --desired-count 1 --task-definition ${FAMILY} --cluster ${CLUSTER} --region ${AWS_REGION} pipeline {
+    agent any
+
+    environment {
+        NVM_DIR = "${HOME}/.nvm"
+        PATH = "${NVM_DIR}/versions/node/v18.16.0/bin:${PATH}"
+        ECR_IMAGE_TAG = "v_${BUILD_NUMBER}"
+        ECR_REPOSITORY = "my-project-app1"
+        AWS_REGION = "ap-south-1"
+        CLUSTER = "my-project"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[credentialsId: '07eb7cf4-68a4-4185-a57c-316864d1c9e5', url: 'https://github.com/Sheetalsgs/myproject.git']])
+            }
+        }
+
+        stage('Build and Package') {
+            steps {
+                sh '''
+                    . $HOME/.nvm/nvm.sh
+                    nvm use v18.16.0
+                    node -v
+                    npm install
+                    npm run build my-project
+                '''
+            }
+        }
+
+        stage("Docker Build") {
+            steps {
+                sh '''
+                    ls 
+                    docker version
+                    docker build -t ${ECR_REPOSITORY}:${ECR_IMAGE_TAG} -f apps/my-project/Dockerfile .
+                    docker image list
+                '''
+            }
+        }
+
+        stage("Docker Push to ECR") {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'AWS_ACCOUNT_ID', variable: 'AWS_ACCOUNT_ID')
+                ]) {
+                    script {
+                        def ecrLogin = sh(
+                            returnStdout: true,
+                            script: "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+                        )
+                        sh "docker tag ${ECR_REPOSITORY}:${ECR_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${ECR_IMAGE_TAG}"
+                        sh "docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${ECR_IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+
+        stage("Prepare Environment") {
+            steps {
+                sh """
+                    set -x
+                    env
+                    aws configure list
+                    echo \$HOME
+                """
+            }
+        }
+
+        stage("Retrieve Repository URI") {
+            steps {
+                script {
+                    REPOSITORY_URI = sh(
+                        returnStdout: true,
+                        script: "aws ecr describe-repositories --repository-names ${ECR_REPOSITORY} --region ${AWS_REGION} | jq -r '.repositories[].repositoryUri'"
+                    ).trim()
+                }
+            }
+        }
+
+        stage("Update Task Definition") {
+            steps {
+                dir('taskdef') {
+                    script {
+                        FAMILY = sh(
+                            returnStdout: true,
+                            script: "sed -n 's/.*\"family\": \"\\(.*\\)\",/\\1/p' my-project-taskdef.json"
+                        ).trim()
+                        NAME = sh(
+                            returnStdout: true,
+                            script: "sed -n 's/.*\"name\": \"\\(.*\\)\",/\\1/p' my-project-taskdef.json"
+                        ).trim()
+                        SERVICE_NAME = "${FAMILY}-service"
+
+                        sh """
+                            sed -e "s;%BUILD_NUMBER%;${BUILD_NUMBER};g" -e "s;%REPOSITORY_URI%;${REPOSITORY_URI};g" my-project-taskdef.json > ${WORKSPACE}/${NAME}-v_${BUILD_NUMBER}.json
+                            aws ecs register-task-definition --family ${FAMILY} --cli-input-json file://${WORKSPACE}/${NAME}-v_${BUILD_NUMBER}.json --region ${AWS_REGION}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage("Create or Update Service") {
+            steps {
+                script {
+                    SERVICES = sh(
+                        returnStdout: true,
+                        script: "aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${AWS_REGION} | jq -r '.failures[]'"
+                    ).trim()
+
+                    REVISION = sh(
+                        returnStdout: true,
+                        script: "aws ecs describe-task-definition --task-definition ${FAMILY} --region ${AWS_REGION} | jq -r '.taskDefinition.revision'"
+                    ).trim()
+
+                    if (SERVICES == "") {
+                        echo "Existing service found"
+                        DESIRED_COUNT = sh(
+                            returnStdout: true,
+                            script: "aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${AWS_REGION} | jq -r '.services[].desiredCount'"
+                        ).trim()
+
+                        if (DESIRED_COUNT == "0") {
+                            DESIRED_COUNT = "1"
+                        }
+
+                        sh "aws ecs update-service --cluster ${CLUSTER} --region ${AWS_REGION} --service ${SERVICE_NAME} --task-definition ${FAMILY}:${REVISION} --desired-count ${DESIRED_COUNT}"
+                    } else {
+                        echo "New service created"
+                        sh "aws ecs create-service --service-name ${SERVICE_NAME} --desired-count 1 --task-definition ${FAMILY} --cluster ${CLUSTER} --region ${AWS_REGION}"
+                    }
+
+                    // Create new target group
+                    def targetGroupName = "my-target-group-${BUILD_NUMBER}"
+                    def targetGroupArn = sh(
+                        returnStdout: true,
+                        script: "aws elbv2 create-target-group --name ${targetGroupName} --protocol HTTP --port 80 --vpc-id <your-vpc-id> --region ${AWS_REGION} | jq -r '.TargetGroups[].TargetGroupArn' loadBalancerArn=${albArn}"
+                    ).trim()
+
+                    // Configure Load Balancer with the new target group
+                    sh "aws ecs create-service --cluster ${CLUSTER} --service ${SERVICE_NAME} --region ${AWS_REGION} --load-balancers targetGroupArn=${targetGroupArn},containerName=${NAME},containerPort=5000"
+
+                    // Configure ALB settings (path routing, health checks, etc.)
+                    sh "aws elbv2 create-rule --listener-arn <your-listener-arn> --priority 1 --conditions Field=path-pattern,Values='/api/data2' --actions Type=forward,TargetGroupArn=${targetGroupArn} --region ${AWS_REGION}"
+                    sh "aws elbv2 modify-target-group --target-group-arn ${targetGroupArn} --health-check-path /api/data2 --health-check-interval-seconds 30 --health-check-timeout-seconds 10 --healthy-threshold-count 3 --unhealthy-threshold-count 3 --region ${AWS_REGION}"
+
+                    // Set task placement constraints
+                    sh """
+                        aws ecs update-service --cluster ${CLUSTER} --service ${SERVICE_NAME} --region ${AWS_REGION} \
+                        --placement-strategy type=spread field=attribute:ecs.availability-zone \"
+                    }
+
+                    // Create new target group
+                    def targetGroupName = "my-target-group-${BUILD_NUMBER}"
+                    def targetGroupArn = sh(
+                        returnStdout: true,
+                        script: "aws elbv2 create-target-group --name ${targetGroupName} --protocol HTTP --port 80 --vpc-id vpc-0584db40ef617a6e1 --region ${AWS_REGION} | jq -r '.TargetGroups[].TargetGroupArn'"
+                    ).trim()
+
+                    // Configure Load Balancer with the new target group
+                    sh "aws ecs create-service --cluster ${CLUSTER} --service ${SERVICE_NAME} --region ${AWS_REGION} --load-balancers targetGroupArn=${targetGroupArn},containerName=<container-name>,containerPort=5000"
+
+                    // Configure ALB settings (path routing, health checks, etc.)
+                    sh "aws elbv2 create-rule --listener-arn <your-listener-arn> --priority 1 --conditions Field=path-pattern,Values='/api/data2' --actions Type=forward,TargetGroupArn=${targetGroupArn} --region ${AWS_REGION}"
+                    sh "aws elbv2 modify-target-group --target-group-arn ${targetGroupArn} --health-check-path /api/data2 --health-check-interval-seconds 30 --health-check-timeout-seconds 10 --healthy-threshold-count 3 --unhealthy-threshold-count 3 --region ${AWS_REGION}"
+
+                    // Set task placement constraints
+                    sh """
+                        aws ecs update-service --cluster ${CLUSTER} --service ${SERVICE_NAME} --region ${AWS_REGION} \
+                        --placement-strategy type=spread field=attribute:ecs.availability-zone \
